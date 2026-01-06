@@ -1,6 +1,6 @@
 {
   "name": "@conscherry/labs-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Node.js/TypeScript client for the Conscherry Labs API (list bots, post stats, read users and website stats).",
   "main": "dist/index.js",
   "module": "dist/index.js",

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - 2026-01-06
+## [1.0.1] - 2026-01-06
 - Initial public-ready release
 - TypeScript client for Conscherry Labs API
 - Public endpoints: list bots, get bot, list users, website stats
