@@ -1,18 +1,31 @@
 import { fetch, Response } from 'undici';
-import type { ApiResponse, Bot, UserSummary, StatRecord } from './types';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import type {
+  ApiResponse,
+  Bot,
+  UserSummary,
+  StatRecord,
+  TelemetryOptions,
+  PostStatsParams,
+} from './types';
 
 export interface LabsApiClientOptions {
   apiKey?: string;
   baseUrl?: string;
+  telemetry?: TelemetryOptions;
 }
 
 export class LabsApiClient {
   private apiKey?: string;
   private baseUrl: string;
+  private telemetry?: TelemetryOptions;
 
   constructor(options: LabsApiClientOptions = {}) {
     this.apiKey = options.apiKey || process.env.LABS_API_KEY;
     this.baseUrl = options.baseUrl || 'https://labs.conscherry.com/api/v1';
+    // telemetry: enabled by default for this project; users may override to opt-out
+    this.telemetry = options.telemetry ?? { enabled: true };
   }
 
   private getHeaders(authRequired = false): Record<string, string> {
@@ -27,25 +40,50 @@ export class LabsApiClient {
       }
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
+    // attach telemetry headers when enabled
+    try {
+      const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+        name?: string;
+        version?: string;
+      };
+      const telemetryEnabled = this.telemetry?.enabled ?? true;
+      if (telemetryEnabled) {
+        headers['X-SDK-Name'] = this.telemetry?.sdkName || pkg.name || 'labs-api';
+        headers['X-SDK-Version'] = this.telemetry?.sdkVersion || pkg.version || '0.0.0';
+        headers['X-SDK-Lang'] = 'node';
+        if (this.telemetry?.includePlatform) {
+          headers['X-SDK-Platform'] = process.platform;
+          headers['X-SDK-Node-Version'] = process.version;
+        }
+      }
+    } catch (e) {
+      // ignore package read errors; telemetry will fall back to minimal defaults
+    }
     return headers;
   }
   /**
    * Post bot statistics (requires authentication)
    */
-  async postStats(params: {
-    botId: string;
-    guildCount: number;
-    userCount: number;
-    shardCount?: number;
-    uptime?: number;
-    ping?: number;
-    customFields?: Record<string, string | number>;
-  }): Promise<ApiResponse<StatRecord>> {
+  async postStats(params: PostStatsParams): Promise<ApiResponse<StatRecord>> {
     const url = `${this.baseUrl}/stats`;
+    // normalize input aliases into canonical shape
+    const body: any = {
+      botId: params.botId,
+      guildCount: params.guildCount ?? params.serverCount ?? params.server_count,
+      userCount: params.userCount,
+      shardCount:
+        params.shardCount ?? (Array.isArray(params.shards) ? params.shards.length : undefined),
+      uptime: params.uptime,
+      ping: params.ping,
+      customFields: params.customFields,
+    };
+    // strip undefined props
+    Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
+
     const res = await fetch(url, {
       method: 'POST',
       headers: this.getHeaders(true),
-      body: JSON.stringify(params),
+      body: JSON.stringify(body),
     });
     return this.handleResponse(res);
   }
@@ -158,6 +196,30 @@ export class LabsApiClient {
       (error as any).statusCode = data.statusCode || res.status;
       throw error;
     }
+    // normalize stat records (aliases) for consumers
+    const normalize = (obj: any) => {
+      if (!obj || typeof obj !== 'object') return obj;
+      const copy = { ...obj };
+      if (copy.guildCount === undefined) {
+        if (copy.serverCount !== undefined) copy.guildCount = copy.serverCount;
+        else if (copy.server_count !== undefined) copy.guildCount = copy.server_count;
+      }
+      if (copy.serverCount === undefined) {
+        if (copy.guildCount !== undefined) copy.serverCount = copy.guildCount;
+        else if (copy.server_count !== undefined) copy.serverCount = copy.server_count;
+      }
+      if (copy.server_count === undefined) {
+        if (copy.guildCount !== undefined) copy.server_count = copy.guildCount;
+        else if (copy.serverCount !== undefined) copy.server_count = copy.serverCount;
+      }
+      return copy;
+    };
+
+    if (data && data.data) {
+      if (Array.isArray(data.data)) data.data = data.data.map(normalize);
+      else if (typeof data.data === 'object') data.data = normalize(data.data);
+    }
+
     return data;
   }
 }

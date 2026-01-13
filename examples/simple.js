@@ -1,8 +1,8 @@
-// Example usage of labs-api (run after `npm run build`)
+// Example usage (run after `npm run build`). Telemetry is enabled by default.
 const { LabsApiClient } = require('../dist/index');
 
 (async () => {
-  const client = new LabsApiClient();
+  const client = new LabsApiClient({ telemetry: { enabled: false } });
   try {
     const website = await client.getWebsiteStats();
     console.log('Website stats:', website.data);

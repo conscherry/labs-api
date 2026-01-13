@@ -10,3 +10,7 @@ All notable changes to this project will be documented in this file.
 - Error handling and rate limit messages
 - Jest tests and GitHub Actions CI
 - Prettier formatting and TypeScript build
+
+## [1.0.2] - 2026-01-13
+- Add SDK telemetry headers (enabled by default): `X-SDK-Name`, `X-SDK-Version`, `X-SDK-Lang` (optional platform/node headers available).
+- Normalize stats payload aliases and responses (`serverCount`, `server_count` <-> `guildCount`) to improve compatibility with API variations.

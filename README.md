@@ -100,6 +100,19 @@ const res = await client.get('/custom', { q: 'search' }, false);
 await client.post('/admin', { action: 'rebuild' }, true);
 ```
 
+Example scripts (built to `dist/`):
+
+- `examples/simple.js` — basic public website stats example (opt-out telemetry shown)
+- `examples/post-stats.js` — authenticated `postStats` example using `serverCount` alias
+- `examples/telemetry-enabled.js` — enable telemetry and override SDK metadata
+
+Run an example after building:
+
+```bash
+npm run build
+node examples/post-stats.js
+```
+
 ## API overview (what this client exposes)
 
 Public endpoints (no API key required):
@@ -121,6 +134,16 @@ All other documented endpoints are available via the generic `get` and `post` he
 - Provide your API key either by passing `{ apiKey: 'sk_...' }` to `LabsApiClient` or by setting `LABS_API_KEY` in the environment.
 - See the official API docs for details on permissions and key management: https://labs.conscherry.com/developers/docs
 - The client will throw a clear error if you attempt an authenticated call without a key.
+
+Telemetry
+
+- This client sends a small set of telemetry headers by default to identify the SDK and runtime to your API (headers: `X-SDK-Name`, `X-SDK-Version`, `X-SDK-Lang`, and optionally `X-SDK-Platform` / `X-SDK-Node-Version`).
+- To customize or disable telemetry, pass the `telemetry` option when creating the client, for example: `new LabsApiClient({ telemetry: { enabled: false } })` or override `sdkName` / `sdkVersion`.
+  - Example: opt-out of telemetry
+
+```js
+const client = new LabsApiClient({ telemetry: { enabled: false } });
+```
 
 ## Rate limits & best practices
 

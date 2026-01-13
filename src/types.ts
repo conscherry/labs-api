@@ -65,7 +65,31 @@ export interface StatRecord {
   botId: string;
   userId?: string;
   guildCount?: number;
+  // Accepted alias fields from the API
+  serverCount?: number;
+  server_count?: number;
   userCount?: number;
   shardCount?: number;
   createdAt?: string;
+}
+
+export interface TelemetryOptions {
+  enabled?: boolean;
+  sdkName?: string;
+  sdkVersion?: string;
+  includePlatform?: boolean;
+}
+
+export interface PostStatsParams {
+  botId: string;
+  // accepted input aliases
+  guildCount?: number;
+  serverCount?: number;
+  server_count?: number;
+  userCount?: number;
+  shardCount?: number;
+  shards?: any[];
+  uptime?: number;
+  ping?: number;
+  customFields?: Record<string, string | number>;
 }
