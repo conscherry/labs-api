@@ -2,7 +2,7 @@
 
 A user-friendly Node.js/TypeScript client for the Conscherry Labs API. This package makes it simple to fetch public data (bots, users, website stats) and post authenticated bot statistics.
 
-[![npm version](https://img.shields.io/npm/v/labs-api.svg)](https://www.npmjs.com/package/labs-api) [![build](https://img.shields.io/github/actions/workflow/status/conscherry/labs-api/ci.yml?branch=main)](https://github.com/conscherry/labs-api/actions) [![license](https://img.shields.io/npm/l/labs-api.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/%40conscherry%2Flabs-api.svg)](https://www.npmjs.com/package/@conscherry/labs-api) [![npm downloads](https://img.shields.io/npm/dm/%40conscherry%2Flabs-api.svg)](https://www.npmjs.com/package/@conscherry/labs-api) [![build](https://img.shields.io/github/actions/workflow/status/conscherry/labs-api/ci.yml?branch=main)](https://github.com/conscherry/labs-api/actions) [![license](https://img.shields.io/github/license/conscherry/labs-api.svg)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/conscherry/labs-api?style=social)](https://github.com/conscherry/labs-api/stargazers) [![codecov](https://img.shields.io/codecov/c/gh/conscherry/labs-api.svg)](https://codecov.io/gh/conscherry/labs-api)
 
 ## Features
 
