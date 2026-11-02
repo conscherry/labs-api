@@ -1,4 +1,3 @@
-// Example: Post bot stats — `serverCount` will be normalized to `guildCount`.
 const { LabsApiClient } = require('../dist/index');
 
 (async () => {

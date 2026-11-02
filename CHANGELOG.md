@@ -14,3 +14,10 @@ All notable changes to this project will be documented in this file.
 ## [1.0.2] - 2026-01-13
 - Add SDK telemetry headers (enabled by default): `X-SDK-Name`, `X-SDK-Version`, `X-SDK-Lang` (optional platform/node headers available).
 - Normalize stats payload aliases and responses (`serverCount`, `server_count` <-> `guildCount`) to improve compatibility with API variations.
+
+## [1.1.0] - 2026-11-01
+- Add public `get` / `post` helpers, as documented in the README.
+- Add `X-SDK-Instance-Id` telemetry header (one random UUID per client).
+- Export exception classes and types from the package entry point.
+- Fix `instanceof` checks on subclassed error types.
+- URL-encode bot ids, validate request paths and handle empty `204` responses.

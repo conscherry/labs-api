@@ -4,17 +4,29 @@ A user-friendly Node.js/TypeScript client for the Conscherry Labs API. This pack
 
 [![npm version](https://img.shields.io/npm/v/%40conscherry%2Flabs-api.svg)](https://www.npmjs.com/package/@conscherry/labs-api) [![npm downloads](https://img.shields.io/npm/dm/%40conscherry%2Flabs-api.svg)](https://www.npmjs.com/package/@conscherry/labs-api) [![build](https://img.shields.io/github/actions/workflow/status/conscherry/labs-api/ci.yml?branch=main)](https://github.com/conscherry/labs-api/actions) [![license](https://img.shields.io/github/license/conscherry/labs-api.svg)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/conscherry/labs-api?style=social)](https://github.com/conscherry/labs-api/stargazers) [![codecov](https://img.shields.io/codecov/c/gh/conscherry/labs-api.svg)](https://codecov.io/gh/conscherry/labs-api)
 
+## Links
+
+- [Conscherry](https://conscherry.com/)
+- [Discord Labs](https://labs.conscherry.com/)
+- [Labs API Documentation](https://labs.conscherry.com/developers/docs/v1)
+- [Labs API Source](https://github.com/conscherry/labs-api)
+- [Python SDK on PyPI](https://pypi.org/project/labs-api-python/)
+
 ## Features
 
 - Simple API for public and authenticated endpoints
 - TypeScript definitions included
-- Handles authentication, helpful errors, and rate-limit messages
+- Robust error handling with dedicated exception classes
+- Built-in request timeouts to prevent hanging calls
+- Automatic response normalization for server count aliases
 - Generic `get` / `post` helpers for future endpoints
+- Configurable `baseUrl` and `timeout`
+- Node.js only (uses `undici` and `fs`); requires Node.js 20.18 or newer
 
 ## Installation
 
 ```bash
-npm install labs-api
+npm install @conscherry/labs-api
 ```
 
 ## Quick start
@@ -40,7 +52,7 @@ require('dotenv').config();
 JavaScript (CommonJS):
 
 ```js
-const { LabsApiClient } = require('labs-api');
+const { LabsApiClient } = require('@conscherry/labs-api');
 const client = new LabsApiClient(); // uses process.env.LABS_API_KEY if present
 
 (async () => {
@@ -52,8 +64,8 @@ const client = new LabsApiClient(); // uses process.env.LABS_API_KEY if present
 TypeScript:
 
 ```ts
-import { LabsApiClient } from 'labs-api';
-import type { Bot } from './src/types';
+import { LabsApiClient } from '@conscherry/labs-api';
+import type { Bot } from '@conscherry/labs-api';
 
 const client = new LabsApiClient({ apiKey: process.env.LABS_API_KEY });
 
@@ -87,7 +99,8 @@ Post bot stats (authenticated — requires `write:stats` permission):
 
 ```js
 const client = new LabsApiClient();
-await client.postStats({ botId: 'BOT_ID', guildCount: 1000, userCount: 5000 });
+// Supports guildCount, serverCount, and server_count aliases
+await client.postStats({ botId: 'BOT_ID', serverCount: 1000, userCount: 5000 });
 ```
 
 Generic request (for new endpoints):
@@ -105,6 +118,7 @@ Example scripts (built to `dist/`):
 - `examples/simple.js` — basic public website stats example (opt-out telemetry shown)
 - `examples/post-stats.js` — authenticated `postStats` example using `serverCount` alias
 - `examples/telemetry-enabled.js` — enable telemetry and override SDK metadata
+- `examples/generic-request.js` — call an endpoint through the generic `get` helper
 
 Run an example after building:
 
@@ -118,7 +132,7 @@ node examples/post-stats.js
 Public endpoints (no API key required):
 
 - `listBots(params?)` — GET `/bots` (params: `limit`, `offset`, `sort`, `search`, `category`, `certified`, `verified`, `nsfw`)
-- `getBotById(id)` — GET `/bots/:id`
+- `getBotById(id)` — GET `/bots/:id` (the id is URL-encoded)
 - `listUsers(params?)` — GET `/users` (params: `limit`, `offset`, `sort`, `search`)
 - `getWebsiteStats()` — GET `/website`
 
@@ -127,18 +141,27 @@ Authenticated endpoints (API key required):
 - `postStats(body)` — POST `/stats` (body: `botId`, `guildCount`, `userCount`, `shardCount`, `uptime`, `ping`, `customFields`)
 - `getStats(params)` — GET `/stats` (params: `botId` required, `limit` optional)
 
-All other documented endpoints are available via the generic `get` and `post` helpers.
+All other documented endpoints are available via the generic `get(path, params?, authenticated?)` and `post(path, body?, authenticated?)` helpers. Paths must start with a single `/` and must not contain a query string; pass query values through `params`.
+
+## Client options
+
+| Option | Type | Default |
+| --- | --- | --- |
+| `apiKey` | `string` | `process.env.LABS_API_KEY` |
+| `baseUrl` | `string` | `https://labs.conscherry.com/api/v1` |
+| `timeout` | `number` (ms) | `15000` |
+| `telemetry` | `{ enabled?, sdkName?, sdkVersion?, includePlatform? }` | `{ enabled: true }` |
 
 ## Authentication
 
 - Provide your API key either by passing `{ apiKey: 'sk_...' }` to `LabsApiClient` or by setting `LABS_API_KEY` in the environment.
-- See the official API docs for details on permissions and key management: https://labs.conscherry.com/developers/docs
+- See the official API docs for details and key management: https://labs.conscherry.com/developers/docs
 - The client will throw a clear error if you attempt an authenticated call without a key.
 
-Telemetry
+## Telemetry
 
-- This client sends a small set of telemetry headers by default to identify the SDK and runtime to your API (headers: `X-SDK-Name`, `X-SDK-Version`, `X-SDK-Lang`, and optionally `X-SDK-Platform` / `X-SDK-Node-Version`).
-- To customize or disable telemetry, pass the `telemetry` option when creating the client, for example: `new LabsApiClient({ telemetry: { enabled: false } })` or override `sdkName` / `sdkVersion`.
+- This client sends a small set of telemetry headers by default to identify the SDK and runtime to your API (headers: `X-SDK-Name`, `X-SDK-Version`, `X-SDK-Lang`, and `X-SDK-Instance-Id`; `X-SDK-Platform` and `X-SDK-Node-Version` are added when `includePlatform` is true).
+- To customize or disable telemetry, pass the `telemetry` option when creating the client, for example: `new LabsApiClient({ telemetry: { enabled: false } })` or override `sdkName` / `sdkVersion`. `X-SDK-Instance-Id` is a random UUID generated once per client.
   - Example: opt-out of telemetry
 
 ```js
@@ -156,14 +179,23 @@ const client = new LabsApiClient({ telemetry: { enabled: false } });
 
 ## Error handling
 
-The client throws `Error` with descriptive messages. Common messages:
+The client throws specific exception classes for different API errors. `LabsAPIError` is the base class; `LabsAPIAuthError` covers 401 or a missing key, `LabsAPIPermissionError` covers 403, `LabsAPIRateLimitError` covers 429, `LabsAPIRequestError` covers other HTTP errors and `LabsAPIConnectionError` covers timeouts, network failures and invalid JSON. Every error exposes `statusCode`, `code`, `retryAfter` and `response`.
 
-- `labs-api: API key is required...` — you called an authenticated endpoint without an API key.
-- `labs-api: Unauthorized. Please check your API key.` — 401 from server.
-- `labs-api: Rate limit exceeded. Please wait before retrying.` — 429 from server.
-- `labs-api: Invalid JSON response from API.` — unexpected server response.
+```js
+const { LabsAPIAuthError, LabsAPIRateLimitError } = require('@conscherry/labs-api');
 
-Inspect `.code` and `.statusCode` properties on thrown errors for programmatic handling.
+try {
+  await client.getStats({ botId: '...' });
+} catch (err) {
+  if (err instanceof LabsAPIAuthError) {
+    console.error('Authentication failed');
+  } else if (err instanceof LabsAPIRateLimitError) {
+    console.error('Rate limited. Retry after:', err.retryAfter);
+  } else {
+    console.error('API Error:', err.message);
+  }
+}
+```
 
 ## Development & tests
 

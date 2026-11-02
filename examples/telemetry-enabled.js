@@ -1,4 +1,3 @@
-// Example: Enable telemetry with custom SDK metadata
 const { LabsApiClient } = require('../dist/index');
 
 (async () => {

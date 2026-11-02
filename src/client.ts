@@ -1,4 +1,5 @@
 import { fetch, Response } from 'undici';
+import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type {
@@ -8,66 +9,157 @@ import type {
   StatRecord,
   TelemetryOptions,
   PostStatsParams,
+  ListBotsParams,
+  ListUsersParams,
 } from './types';
+import {
+  LabsAPIAuthError,
+  LabsAPIPermissionError,
+  LabsAPIRateLimitError,
+  LabsAPIRequestError,
+  LabsAPIConnectionError,
+} from './exceptions';
+
+export const DEFAULT_BASE_URL = 'https://labs.conscherry.com/api/v1';
+export const DEFAULT_TIMEOUT = 15000;
 
 export interface LabsApiClientOptions {
   apiKey?: string;
   baseUrl?: string;
   telemetry?: TelemetryOptions;
+  timeout?: number;
+}
+
+type QueryParams = Record<string, string | number | boolean | undefined | null>;
+
+let packageMeta: { name?: string; version?: string } | undefined;
+
+function readPackageMeta(): { name?: string; version?: string } {
+  if (packageMeta) return packageMeta;
+  try {
+    packageMeta = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+      name?: string;
+      version?: string;
+    };
+  } catch {
+    packageMeta = {};
+  }
+  return packageMeta;
+}
+
+function buildQuery(params: QueryParams = {}): string {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) search.append(key, String(value));
+  });
+  const query = search.toString();
+  return query ? `?${query}` : '';
 }
 
 export class LabsApiClient {
   private apiKey?: string;
   private baseUrl: string;
-  private telemetry?: TelemetryOptions;
+  private telemetry: TelemetryOptions;
+  private timeout: number;
+  private instanceId: string;
 
   constructor(options: LabsApiClientOptions = {}) {
     this.apiKey = options.apiKey || process.env.LABS_API_KEY;
-    this.baseUrl = options.baseUrl || 'https://labs.conscherry.com/api/v1';
-    // telemetry: enabled by default for this project; users may override to opt-out
+    this.baseUrl = (options.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.telemetry = options.telemetry ?? { enabled: true };
+    this.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+    this.instanceId = randomUUID();
   }
 
   private getHeaders(authRequired = false): Record<string, string> {
     const headers: Record<string, string> = {
+      Accept: 'application/json',
       'Content-Type': 'application/json',
     };
+
     if (authRequired) {
       if (!this.apiKey) {
-        throw new Error(
+        throw new LabsAPIAuthError(
           'labs-api: API key is required for this operation. Please provide your API key when creating the LabsApiClient or set the LABS_API_KEY environment variable.'
         );
       }
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
-    // attach telemetry headers when enabled
-    try {
-      const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
-        name?: string;
-        version?: string;
-      };
-      const telemetryEnabled = this.telemetry?.enabled ?? true;
-      if (telemetryEnabled) {
-        headers['X-SDK-Name'] = this.telemetry?.sdkName || pkg.name || 'labs-api';
-        headers['X-SDK-Version'] = this.telemetry?.sdkVersion || pkg.version || '0.0.0';
-        headers['X-SDK-Lang'] = 'node';
-        if (this.telemetry?.includePlatform) {
-          headers['X-SDK-Platform'] = process.platform;
-          headers['X-SDK-Node-Version'] = process.version;
-        }
+
+    if (this.telemetry.enabled ?? true) {
+      const pkg = readPackageMeta();
+      headers['X-SDK-Name'] = this.telemetry.sdkName || pkg.name || 'labs-api';
+      headers['X-SDK-Version'] = this.telemetry.sdkVersion || pkg.version || '0.0.0';
+      headers['X-SDK-Lang'] = 'node';
+      headers['X-SDK-Instance-Id'] = this.instanceId;
+      if (this.telemetry.includePlatform) {
+        headers['X-SDK-Platform'] = process.platform;
+        headers['X-SDK-Node-Version'] = process.version;
       }
-    } catch (e) {
-      // ignore package read errors; telemetry will fall back to minimal defaults
     }
+
     return headers;
   }
-  /**
-   * Post bot statistics (requires authentication)
-   */
+
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    options: { params?: QueryParams; body?: unknown; authenticated?: boolean } = {}
+  ): Promise<any> {
+    if (!path.startsWith('/') || path.startsWith('//')) {
+      throw new LabsAPIRequestError('labs-api: API path must start with one slash.');
+    }
+    if (path.includes('?') || path.includes('#') || path.includes('\\')) {
+      throw new LabsAPIRequestError('labs-api: Pass query parameters through params.');
+    }
+
+    const url = `${this.baseUrl}${path}${buildQuery(options.params)}`;
+    const headers = this.getHeaders(options.authenticated);
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: AbortSignal.timeout(this.timeout),
+      });
+    } catch (e: any) {
+      if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+        throw new LabsAPIConnectionError(`labs-api: Request timed out after ${this.timeout}ms`, {
+          response: e,
+        });
+      }
+      throw new LabsAPIConnectionError(`labs-api: Connection error: ${e.message}`, {
+        response: e,
+      });
+    }
+
+    return this.handleResponse(res);
+  }
+
+  async get<T = any>(
+    path: string,
+    params?: QueryParams,
+    authenticated = false
+  ): Promise<ApiResponse<T>> {
+    return this.request('GET', path, { params, authenticated });
+  }
+
+  async post<T = any>(
+    path: string,
+    body?: unknown,
+    authenticated = false
+  ): Promise<ApiResponse<T>> {
+    return this.request('POST', path, { body, authenticated });
+  }
+
   async postStats(params: PostStatsParams): Promise<ApiResponse<StatRecord>> {
-    const url = `${this.baseUrl}/stats`;
-    // normalize input aliases into canonical shape
-    const body: any = {
+    if (!params.botId) {
+      throw new LabsAPIRequestError('labs-api: botId is required to post stats.');
+    }
+
+    const body: Record<string, unknown> = {
       botId: params.botId,
       guildCount: params.guildCount ?? params.serverCount ?? params.server_count,
       userCount: params.userCount,
@@ -77,140 +169,61 @@ export class LabsApiClient {
       ping: params.ping,
       customFields: params.customFields,
     };
-    // strip undefined props
     Object.keys(body).forEach((k) => body[k] === undefined && delete body[k]);
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: this.getHeaders(true),
-      body: JSON.stringify(body),
-    });
-    return this.handleResponse(res);
+    return this.post('/stats', body, true);
   }
 
-  /**
-   * Get bot statistics (requires authentication)
-   */
   async getStats(params: { botId: string; limit?: number }): Promise<ApiResponse<StatRecord[]>> {
     if (!params.botId) {
-      throw new Error('labs-api: botId is required to get stats.');
+      throw new LabsAPIRequestError('labs-api: botId is required to get stats.');
     }
-    const url = new URL(`${this.baseUrl}/stats`);
-    url.searchParams.append('botId', params.botId);
-    if (params.limit !== undefined) {
-      url.searchParams.append('limit', String(params.limit));
-    }
-    const res = await fetch(url.toString(), {
-      headers: this.getHeaders(true),
-    });
-    return this.handleResponse(res);
+    return this.get('/stats', { botId: params.botId, limit: params.limit }, true);
   }
 
-  /**
-   * List bots with optional query parameters
-   */
-  async listBots(
-    params: {
-      limit?: number;
-      offset?: number;
-      sort?: string;
-      search?: string;
-      category?: string;
-      certified?: boolean;
-      verified?: boolean;
-      nsfw?: boolean;
-    } = {}
-  ): Promise<ApiResponse<Bot[]>> {
-    const url = new URL(`${this.baseUrl}/bots`);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) url.searchParams.append(key, String(value));
-    });
-    const res = await fetch(url.toString(), {
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse(res);
+  async listBots(params: ListBotsParams = {}): Promise<ApiResponse<Bot[]>> {
+    return this.get('/bots', params as QueryParams);
   }
 
-  /**
-   * Get a bot by its Discord client ID
-   */
   async getBotById(id: string): Promise<ApiResponse<Bot>> {
-    const url = `${this.baseUrl}/bots/${id}`;
-    const res = await fetch(url, {
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse(res);
+    if (!id) {
+      throw new LabsAPIRequestError('labs-api: id is required to get a bot.');
+    }
+    return this.get(`/bots/${encodeURIComponent(id)}`);
   }
 
-  /**
-   * List users with optional query parameters
-   */
-  async listUsers(
-    params: {
-      limit?: number;
-      offset?: number;
-      sort?: string;
-      search?: string;
-    } = {}
-  ): Promise<ApiResponse<UserSummary[]>> {
-    const url = new URL(`${this.baseUrl}/users`);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) url.searchParams.append(key, String(value));
-    });
-    const res = await fetch(url.toString(), {
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse(res);
+  async listUsers(params: ListUsersParams = {}): Promise<ApiResponse<UserSummary[]>> {
+    return this.get('/users', params as QueryParams);
   }
 
-  /**
-   * Get public website statistics
-   */
   async getWebsiteStats(): Promise<ApiResponse<any>> {
-    const url = `${this.baseUrl}/website`;
-    const res = await fetch(url, {
-      headers: this.getHeaders(),
-    });
-    return this.handleResponse(res);
+    return this.get('/website');
   }
 
-  /**
-   * Handle API responses, throw on error
-   */
   private async handleResponse(res: Response): Promise<any> {
     let data: any;
     try {
       data = await res.json();
     } catch (e) {
-      throw new Error('labs-api: Invalid JSON response from API.');
-    }
-    if (!res.ok || data.success === false) {
-      let message = data?.error || res.statusText;
-      if (res.status === 401) {
-        message = 'labs-api: Unauthorized. Please check your API key.';
-      } else if (res.status === 429) {
-        message = 'labs-api: Rate limit exceeded. Please wait before retrying.';
+      if (res.ok && res.status === 204) return undefined;
+      if (!res.ok) {
+        return this.throwForStatus(res, undefined);
       }
-      const error = new Error(message);
-      (error as any).code = data.code || res.status;
-      (error as any).statusCode = data.statusCode || res.status;
-      throw error;
+      throw new LabsAPIConnectionError('labs-api: Invalid JSON response from API.');
     }
-    // normalize stat records (aliases) for consumers
+
+    if (!res.ok || data?.success === false) {
+      return this.throwForStatus(res, data);
+    }
+
     const normalize = (obj: any) => {
       if (!obj || typeof obj !== 'object') return obj;
       const copy = { ...obj };
-      if (copy.guildCount === undefined) {
-        if (copy.serverCount !== undefined) copy.guildCount = copy.serverCount;
-        else if (copy.server_count !== undefined) copy.guildCount = copy.server_count;
-      }
-      if (copy.serverCount === undefined) {
-        if (copy.guildCount !== undefined) copy.serverCount = copy.guildCount;
-        else if (copy.server_count !== undefined) copy.serverCount = copy.server_count;
-      }
-      if (copy.server_count === undefined) {
-        if (copy.guildCount !== undefined) copy.server_count = copy.guildCount;
-        else if (copy.serverCount !== undefined) copy.server_count = copy.serverCount;
+      const value = copy.guildCount ?? copy.serverCount ?? copy.server_count;
+      if (value !== undefined) {
+        copy.guildCount = value;
+        copy.serverCount = value;
+        copy.server_count = value;
       }
       return copy;
     };
@@ -221,5 +234,34 @@ export class LabsApiClient {
     }
 
     return data;
+  }
+
+  private throwForStatus(res: Response, data: any): never {
+    const statusCode = data?.statusCode || res.status;
+    const code = data?.code || res.status;
+    const message = data?.error || data?.message || res.statusText;
+
+    if (res.status === 401) {
+      throw new LabsAPIAuthError('labs-api: Unauthorized. Please check your API key.', {
+        statusCode,
+        code,
+        response: data,
+      });
+    }
+    if (res.status === 403) {
+      throw new LabsAPIPermissionError(
+        'labs-api: Forbidden. You do not have permission for this action.',
+        { statusCode, code, response: data }
+      );
+    }
+    if (res.status === 429) {
+      throw new LabsAPIRateLimitError('labs-api: Rate limit exceeded. Please wait before retrying.', {
+        statusCode,
+        code,
+        retryAfter: Number(res.headers.get('Retry-After')) || undefined,
+        response: data,
+      });
+    }
+    throw new LabsAPIRequestError(message, { statusCode, code, response: data });
   }
 }

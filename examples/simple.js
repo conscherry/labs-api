@@ -1,4 +1,3 @@
-// Example usage (run after `npm run build`). Telemetry is enabled by default.
 const { LabsApiClient } = require('../dist/index');
 
 (async () => {

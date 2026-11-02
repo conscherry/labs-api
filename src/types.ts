@@ -65,7 +65,6 @@ export interface StatRecord {
   botId: string;
   userId?: string;
   guildCount?: number;
-  // Accepted alias fields from the API
   serverCount?: number;
   server_count?: number;
   userCount?: number;
@@ -82,7 +81,6 @@ export interface TelemetryOptions {
 
 export interface PostStatsParams {
   botId: string;
-  // accepted input aliases
   guildCount?: number;
   serverCount?: number;
   server_count?: number;
@@ -92,4 +90,22 @@ export interface PostStatsParams {
   uptime?: number;
   ping?: number;
   customFields?: Record<string, string | number>;
+}
+
+export interface ListBotsParams {
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  search?: string;
+  category?: string;
+  certified?: boolean;
+  verified?: boolean;
+  nsfw?: boolean;
+}
+
+export interface ListUsersParams {
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  search?: string;
 }
