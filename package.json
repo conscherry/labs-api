@@ -10,6 +10,7 @@
     "format": "prettier --write \"src/**/*.{ts,js}\" README.md package.json",
     "lint": "echo \"No lint configured\"",
     "test": "jest --passWithNoTests",
+    "test:ci": "jest --passWithNoTests --coverage --coverageReporters=lcov --coverageReporters=text",
     "clean": "rimraf dist",
     "prepare": "npm run build",
     "prepublishOnly": "npm run test"
@@ -44,7 +45,7 @@
     ".env.example"
   ],
   "engines": {
-    "node": ">=14"
+    "node": ">=20.18.0"
   },
   "publishConfig": {
     "access": "public"
